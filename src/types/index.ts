@@ -67,6 +67,30 @@ export interface Anomaly {
   replenishQuantity?: number
 }
 
+export type CheckScope = 'category' | 'location' | 'responsible' | 'specific_items'
+export type CheckStatus = 'pending' | 'in_progress' | 'completed'
+
+export interface InventoryCheckItem {
+  itemId: string
+  bookQuantity: number
+  actualQuantity: number | null
+  difference: number | null
+  note: string
+}
+
+export interface InventoryCheck {
+  id: string
+  title: string
+  scope: CheckScope
+  scopeIds: string[]
+  checkerName: string
+  status: CheckStatus
+  items: InventoryCheckItem[]
+  note: string
+  createdAt: string
+  completedAt: string | null
+}
+
 export interface FilterState {
   category: string | null
   location: string | null
@@ -74,13 +98,14 @@ export interface FilterState {
   borrowStatus: BorrowStatus | null
   anomalyType: AnomalyType | null
   searchQuery: string
+  checkStatus: CheckStatus | null
 }
 
 export type BatchAction = 'return' | 'replenish' | 'check'
 
 export interface AlertItem {
   id: string
-  type: 'low_stock' | 'overdue' | 'responsible_missing'
+  type: 'low_stock' | 'overdue' | 'responsible_missing' | 'check_pending' | 'check_diff'
   title: string
   description: string
   relatedId: string

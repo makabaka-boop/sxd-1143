@@ -2,14 +2,14 @@ import { useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
 import type { FilterState } from '@/types'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { Search, AlertTriangle, Package, ArrowRightLeft, ClipboardList, RotateCcw, AlertCircle, X, PlusCircle } from 'lucide-react'
+import { Search, AlertTriangle, Package, ArrowRightLeft, ClipboardList, RotateCcw, AlertCircle, X, PlusCircle, ClipboardCheck } from 'lucide-react'
 
 export default function Overview() {
   const {
-    items, borrowRecords, categories, locations, responsibles, anomalies,
+    items, borrowRecords, categories, locations, responsibles, anomalies, inventoryChecks,
     filters, selectedIds, currentRole, alerts,
     setFilters, resetFilters, toggleSelect, selectAll, clearSelection,
-    batchUpdateItems, batchReturnBorrowRecords, addAnomaly,
+    batchReturnBorrowRecords, addAnomaly,
   } = useAppStore()
 
   const [pendingFilter, setPendingFilter] = useState<Partial<FilterState> | null>(null)
@@ -27,8 +27,30 @@ export default function Overview() {
       if (filters.borrowStatus === 'returned' && hasActive) return false
     }
     if (filters.anomalyType && !anomalies.some((a) => a.itemId === item.id && a.type === filters.anomalyType)) return false
+    if (filters.checkStatus) {
+      const checks = inventoryChecks.filter((c) => c.items.some((ci) => ci.itemId === item.id))
+      const latest = checks.length > 0 ? checks.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] : null
+      if (!latest) return false
+      if (latest.status !== filters.checkStatus) return false
+    }
     return true
-  }), [items, borrowRecords, anomalies, filters])
+  }), [items, borrowRecords, anomalies, inventoryChecks, filters])
+
+  const getLatestCheck = (itemId: string) => {
+    const checks = inventoryChecks.filter((c) => c.items.some((i) => i.itemId === itemId))
+    if (checks.length === 0) return null
+    return checks.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+  }
+
+  const getCheckBadge = (itemId: string) => {
+    const latest = getLatestCheck(itemId)
+    if (!latest) return null
+    if (latest.status === 'pending') return { cls: 'badge-warning', label: '待盘点' }
+    if (latest.status === 'in_progress') return { cls: 'badge-info', label: '盘点中' }
+    const hasDiff = latest.items.some((i) => i.itemId === itemId && i.difference !== null && i.difference !== 0)
+    if (hasDiff) return { cls: 'badge-danger', label: '有差异' }
+    return { cls: 'badge-success', label: '已盘点' }
+  }
 
   const visibleItemIds = useMemo(() => new Set(filteredItems.map((i) => i.id)), [filteredItems])
   const selectedArr = useMemo(() => Array.from(selectedIds), [selectedIds])
@@ -38,6 +60,8 @@ export default function Overview() {
   const lowStockCount = alerts.filter((a) => a.type === 'low_stock').length
   const overdueCount = alerts.filter((a) => a.type === 'overdue').length
   const respMissingCount = alerts.filter((a) => a.type === 'responsible_missing').length
+  const checkPendingCount = alerts.filter((a) => a.type === 'check_pending').length
+  const checkDiffCount = alerts.filter((a) => a.type === 'check_diff').length
 
   const catName = (id: string) => categories.find((c) => c.id === id)?.name ?? '-'
   const locName = (id: string) => locations.find((l) => l.id === id)?.name ?? '-'
@@ -145,6 +169,16 @@ export default function Overview() {
             <span className="text-sm">责任人空缺</span>
             <span className="badge badge-info">{respMissingCount}</span>
           </div>
+          <div className="card px-4 py-2 flex items-center gap-2 cursor-pointer hover:border-purple-500 transition-colors" style={{ borderColor: checkPendingCount > 0 ? 'var(--warning)' : 'var(--border-color)' }} onClick={() => handleFilterChange({ checkStatus: null })}>
+            <ClipboardCheck size={16} style={{ color: '#a855f7' }} />
+            <span className="text-sm">待盘点</span>
+            <span className="badge badge-warning">{checkPendingCount}</span>
+          </div>
+          <div className="card px-4 py-2 flex items-center gap-2 cursor-pointer hover:border-orange-500 transition-colors" style={{ borderColor: checkDiffCount > 0 ? 'var(--danger)' : 'var(--border-color)' }}>
+            <ClipboardCheck size={16} style={{ color: '#f97316' }} />
+            <span className="text-sm">盘点差异</span>
+            <span className="badge badge-danger">{checkDiffCount}</span>
+          </div>
         </div>
       </div>
 
@@ -180,6 +214,12 @@ export default function Overview() {
           <option value="responsible_missing">责任人空缺</option>
           <option value="replenish_request">补充申请</option>
         </select>
+        <select className="select-field w-32" value={filters.checkStatus ?? ''} onChange={(e) => handleFilterChange({ checkStatus: (e.target.value || null) as FilterState['checkStatus'] })}>
+          <option value="">盘点状态</option>
+          <option value="pending">待盘点</option>
+          <option value="in_progress">盘点中</option>
+          <option value="completed">已盘点</option>
+        </select>
         <button className="btn-secondary flex items-center gap-1.5" onClick={() => { resetFilters(); clearSelection() }}>
           <RotateCcw size={14} /> 重置
         </button>
@@ -207,6 +247,8 @@ export default function Overview() {
                 <th className="p-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>库存</th>
                 <th className="p-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>状态</th>
                 <th className="p-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>领用中</th>
+                <th className="p-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>盘点状态</th>
+                <th className="p-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>最近盘点</th>
               </tr>
             </thead>
             <tbody>
@@ -231,6 +273,8 @@ export default function Overview() {
                     </td>
                     <td className="p-3"><span className={`badge ${badgeCls}`}>{badgeLabel}</span></td>
                     <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{activeBorrowCount(item.id)}</td>
+                    <td className="p-3">{(() => { const cb = getCheckBadge(item.id); return cb ? <span className={`badge ${cb.cls}`}>{cb.label}</span> : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span> })()}</td>
+                    <td className="p-3 text-xs" style={{ color: 'var(--text-muted)' }}>{(() => { const lc = getLatestCheck(item.id); return lc ? new Date(lc.completedAt || lc.createdAt).toLocaleDateString() : '—' })()}</td>
                   </tr>
                 )
               })}

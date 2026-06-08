@@ -66,6 +66,21 @@ export default function Audit() {
         })
       }
     }
+    if (anomaly.type === 'quantity_mismatch' && anomaly.itemId) {
+      const item = items.find((i) => i.id === anomaly.itemId)
+      if (item) {
+        const match = anomaly.description.match(/实盘(\d+)件/);
+        if (match) {
+          const actualQty = parseInt(match[1], 10);
+          const diff = actualQty - item.availableQuantity;
+          await updateItem({
+            ...item,
+            availableQuantity: Math.max(0, actualQty),
+            totalQuantity: Math.max(0, item.totalQuantity + diff),
+          })
+        }
+      }
+    }
     await updateAnomaly({ ...anomaly, status: 'resolved', checkedAt: new Date().toISOString() })
     setActionMsg('已标记为已解决')
     setTimeout(() => setActionMsg(''), 2000)
@@ -242,7 +257,7 @@ export default function Audit() {
                       )}
                       <button className="btn-primary flex items-center gap-1.5 text-xs" onClick={() => handleResolve(anomaly)}>
                         {anomaly.type === 'replenish_request' ? <PackagePlus size={14} /> : <CheckCircle size={14} />}
-                        {anomaly.type === 'replenish_request' ? '批准并入库' : '标记已解决'}
+                        {anomaly.type === 'replenish_request' ? '批准并入库' : anomaly.type === 'quantity_mismatch' ? '确认调整库存' : '标记已解决'}
                       </button>
                     </div>
                   )}

@@ -1,23 +1,29 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores/useAppStore'
 import type { Category, Location, Responsible } from '@/types'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { Plus, Pencil, Trash2, Tag, MapPin, User, X, Check } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tag, MapPin, User, X, Check, ClipboardCheck } from 'lucide-react'
 
 type Tab = 'categories' | 'locations' | 'responsibles'
 
 export default function Manage() {
   const {
-    categories, locations, responsibles,
-    addCategory, updateCategory, deleteCategory,
-    addLocation, updateLocation, deleteLocation,
-    addResponsible, updateResponsible, deleteResponsible,
+    categories, locations, responsibles, inventoryChecks,
+    deleteCategory,
+    deleteLocation,
+    deleteResponsible,
   } = useAppStore()
+  const navigate = useNavigate()
 
   const [tab, setTab] = useState<Tab>('categories')
   const [editId, setEditId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ type: Tab; id: string; name: string } | null>(null)
+
+  const getCheckCount = (scope: 'category' | 'location' | 'responsible', id: string) => {
+    return inventoryChecks.filter((c) => c.scope === scope && c.scopeIds.includes(id)).length
+  }
 
   const tabs: { key: Tab; label: string; icon: typeof Tag; count: number }[] = [
     { key: 'categories', label: '物品分类', icon: Tag, count: categories.length },
@@ -64,9 +70,9 @@ export default function Manage() {
       )}
 
       <div className="card overflow-hidden p-0">
-        {tab === 'categories' && <CategoryTable items={categories} editId={editId} setEditId={setEditId} onDelete={(id, name) => setDeleteTarget({ type: 'categories', id, name })} />}
-        {tab === 'locations' && <LocationTable items={locations} editId={editId} setEditId={setEditId} onDelete={(id, name) => setDeleteTarget({ type: 'locations', id, name })} />}
-        {tab === 'responsibles' && <ResponsibleTable items={responsibles} editId={editId} setEditId={setEditId} onDelete={(id, name) => setDeleteTarget({ type: 'responsibles', id, name })} />}
+        {tab === 'categories' && <CategoryTable items={categories} editId={editId} setEditId={setEditId} onDelete={(id, name) => setDeleteTarget({ type: 'categories', id, name })} getCheckCount={(id) => getCheckCount('category', id)} onGoChecks={() => navigate('/inventory-check')} />}
+      {tab === 'locations' && <LocationTable items={locations} editId={editId} setEditId={setEditId} onDelete={(id, name) => setDeleteTarget({ type: 'locations', id, name })} getCheckCount={(id) => getCheckCount('location', id)} onGoChecks={() => navigate('/inventory-check')} />}
+      {tab === 'responsibles' && <ResponsibleTable items={responsibles} editId={editId} setEditId={setEditId} onDelete={(id, name) => setDeleteTarget({ type: 'responsibles', id, name })} getCheckCount={(id) => getCheckCount('responsible', id)} onGoChecks={() => navigate('/inventory-check')} />}
       </div>
 
       <ConfirmDialog
@@ -133,7 +139,7 @@ function AddForm({ tab, onClose }: { tab: Tab; onClose: () => void }) {
   )
 }
 
-function CategoryTable({ items, editId, setEditId, onDelete }: { items: Category[]; editId: string | null; setEditId: (id: string | null) => void; onDelete: (id: string, name: string) => void }) {
+function CategoryTable({ items, editId, setEditId, onDelete, getCheckCount, onGoChecks }: { items: Category[]; editId: string | null; setEditId: (id: string | null) => void; onDelete: (id: string, name: string) => void; getCheckCount: (id: string) => number; onGoChecks: () => void }) {
   const { updateCategory } = useAppStore()
   const [editForm, setEditForm] = useState<Record<string, string>>({})
 
@@ -157,17 +163,21 @@ function CategoryTable({ items, editId, setEditId, onDelete }: { items: Category
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>名称</th>
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>描述</th>
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>创建时间</th>
+          <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>盘点记录</th>
           <th className="p-3 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>操作</th>
         </tr>
       </thead>
       <tbody>
-        {items.map((item) => (
+        {items.map((item) => {
+          const checkCount = getCheckCount(item.id)
+          return (
           <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
             {editId === item.id ? (
               <>
                 <td className="p-3"><input className="input-field" value={editForm.name || ''} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
                 <td className="p-3"><input className="input-field" value={editForm.description || ''} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>{new Date(item.createdAt).toLocaleDateString()}</td>
+                <td className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>{checkCount > 0 ? <span className="badge badge-info">{checkCount}</span> : '—'}</td>
                 <td className="p-3 text-right"><button className="btn-primary text-xs px-3 py-1" onClick={saveEdit}><Check size={12} /></button></td>
               </>
             ) : (
@@ -175,6 +185,7 @@ function CategoryTable({ items, editId, setEditId, onDelete }: { items: Category
                 <td className="p-3 font-medium text-sm">{item.name}</td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.description || '-'}</td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>{new Date(item.createdAt).toLocaleDateString()}</td>
+                <td className="p-3 text-sm">{checkCount > 0 ? <button className="badge badge-info cursor-pointer hover:opacity-80 transition-opacity" onClick={onGoChecks}><ClipboardCheck size={10} className="inline mr-1" />{checkCount}</button> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                 <td className="p-3 text-right space-x-2">
                   <button className="btn-secondary text-xs px-3 py-1" onClick={() => startEdit(item)}><Pencil size={12} /></button>
                   <button className="btn-danger text-xs px-3 py-1" onClick={() => onDelete(item.id, item.name)}><Trash2 size={12} /></button>
@@ -182,13 +193,14 @@ function CategoryTable({ items, editId, setEditId, onDelete }: { items: Category
               </>
             )}
           </tr>
-        ))}
+          )
+        })}
       </tbody>
     </table>
   )
 }
 
-function LocationTable({ items, editId, setEditId, onDelete }: { items: Location[]; editId: string | null; setEditId: (id: string | null) => void; onDelete: (id: string, name: string) => void }) {
+function LocationTable({ items, editId, setEditId, onDelete, getCheckCount, onGoChecks }: { items: Location[]; editId: string | null; setEditId: (id: string | null) => void; onDelete: (id: string, name: string) => void; getCheckCount: (id: string) => number; onGoChecks: () => void }) {
   const { updateLocation } = useAppStore()
   const [editForm, setEditForm] = useState<Record<string, string>>({})
 
@@ -213,11 +225,14 @@ function LocationTable({ items, editId, setEditId, onDelete }: { items: Location
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>楼栋</th>
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>楼层</th>
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>房间</th>
+          <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>盘点记录</th>
           <th className="p-3 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>操作</th>
         </tr>
       </thead>
       <tbody>
-        {items.map((item) => (
+        {items.map((item) => {
+          const checkCount = getCheckCount(item.id)
+          return (
           <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
             {editId === item.id ? (
               <>
@@ -225,6 +240,7 @@ function LocationTable({ items, editId, setEditId, onDelete }: { items: Location
                 <td className="p-3"><input className="input-field" value={editForm.building || ''} onChange={(e) => setEditForm({ ...editForm, building: e.target.value })} /></td>
                 <td className="p-3"><input className="input-field w-20" value={editForm.floor || ''} onChange={(e) => setEditForm({ ...editForm, floor: e.target.value })} /></td>
                 <td className="p-3"><input className="input-field w-24" value={editForm.room || ''} onChange={(e) => setEditForm({ ...editForm, room: e.target.value })} /></td>
+                <td className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>{checkCount > 0 ? <span className="badge badge-info">{checkCount}</span> : '—'}</td>
                 <td className="p-3 text-right"><button className="btn-primary text-xs px-3 py-1" onClick={saveEdit}><Check size={12} /></button></td>
               </>
             ) : (
@@ -233,6 +249,7 @@ function LocationTable({ items, editId, setEditId, onDelete }: { items: Location
                 <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.building}</td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.floor}</td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.room}</td>
+                <td className="p-3 text-sm">{checkCount > 0 ? <button className="badge badge-info cursor-pointer hover:opacity-80 transition-opacity" onClick={onGoChecks}><ClipboardCheck size={10} className="inline mr-1" />{checkCount}</button> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                 <td className="p-3 text-right space-x-2">
                   <button className="btn-secondary text-xs px-3 py-1" onClick={() => startEdit(item)}><Pencil size={12} /></button>
                   <button className="btn-danger text-xs px-3 py-1" onClick={() => onDelete(item.id, item.name)}><Trash2 size={12} /></button>
@@ -240,13 +257,14 @@ function LocationTable({ items, editId, setEditId, onDelete }: { items: Location
               </>
             )}
           </tr>
-        ))}
+          )
+        })}
       </tbody>
     </table>
   )
 }
 
-function ResponsibleTable({ items, editId, setEditId, onDelete }: { items: Responsible[]; editId: string | null; setEditId: (id: string | null) => void; onDelete: (id: string, name: string) => void }) {
+function ResponsibleTable({ items, editId, setEditId, onDelete, getCheckCount, onGoChecks }: { items: Responsible[]; editId: string | null; setEditId: (id: string | null) => void; onDelete: (id: string, name: string) => void; getCheckCount: (id: string) => number; onGoChecks: () => void }) {
   const { updateResponsible } = useAppStore()
   const [editForm, setEditForm] = useState<Record<string, string>>({})
 
@@ -270,17 +288,21 @@ function ResponsibleTable({ items, editId, setEditId, onDelete }: { items: Respo
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>姓名</th>
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>部门</th>
           <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>联系方式</th>
+          <th className="p-3 text-left text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>盘点记录</th>
           <th className="p-3 text-right text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>操作</th>
         </tr>
       </thead>
       <tbody>
-        {items.map((item) => (
+        {items.map((item) => {
+          const checkCount = getCheckCount(item.id)
+          return (
           <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
             {editId === item.id ? (
               <>
                 <td className="p-3"><input className="input-field" value={editForm.name || ''} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
                 <td className="p-3"><input className="input-field" value={editForm.department || ''} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} /></td>
                 <td className="p-3"><input className="input-field" value={editForm.contact || ''} onChange={(e) => setEditForm({ ...editForm, contact: e.target.value })} /></td>
+                <td className="p-3 text-sm" style={{ color: 'var(--text-muted)' }}>{checkCount > 0 ? <span className="badge badge-info">{checkCount}</span> : '—'}</td>
                 <td className="p-3 text-right"><button className="btn-primary text-xs px-3 py-1" onClick={saveEdit}><Check size={12} /></button></td>
               </>
             ) : (
@@ -288,6 +310,7 @@ function ResponsibleTable({ items, editId, setEditId, onDelete }: { items: Respo
                 <td className="p-3 font-medium text-sm">{item.name}</td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.department}</td>
                 <td className="p-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.contact}</td>
+                <td className="p-3 text-sm">{checkCount > 0 ? <button className="badge badge-info cursor-pointer hover:opacity-80 transition-opacity" onClick={onGoChecks}><ClipboardCheck size={10} className="inline mr-1" />{checkCount}</button> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                 <td className="p-3 text-right space-x-2">
                   <button className="btn-secondary text-xs px-3 py-1" onClick={() => startEdit(item)}><Pencil size={12} /></button>
                   <button className="btn-danger text-xs px-3 py-1" onClick={() => onDelete(item.id, item.name)}><Trash2 size={12} /></button>
@@ -295,7 +318,8 @@ function ResponsibleTable({ items, editId, setEditId, onDelete }: { items: Respo
               </>
             )}
           </tr>
-        ))}
+          )
+        })}
       </tbody>
     </table>
   )

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { Role, Category, Location, Responsible, Item, ItemStatus, BorrowRecord, Anomaly, FilterState, AlertItem } from '@/types'
+import type { Role, Category, Location, Responsible, Item, ItemStatus, BorrowRecord, Anomaly, FilterState, AlertItem, InventoryCheck } from '@/types'
 import { db, generateId } from '@/lib/db'
-import { seedCategories, seedLocations, seedResponsibles, seedItems, seedBorrowRecords, seedAnomalies } from '@/lib/seed'
+import { seedCategories, seedLocations, seedResponsibles, seedItems, seedBorrowRecords, seedAnomalies, seedInventoryChecks } from '@/lib/seed'
 
 interface AppState {
   currentRole: Role
@@ -11,6 +11,7 @@ interface AppState {
   items: Item[]
   borrowRecords: BorrowRecord[]
   anomalies: Anomaly[]
+  inventoryChecks: InventoryCheck[]
   filters: FilterState
   selectedIds: Set<string>
   alerts: AlertItem[]
@@ -44,6 +45,10 @@ interface AppState {
   addAnomaly: (data: Omit<Anomaly, 'id' | 'createdAt' | 'checkedAt'>) => Promise<void>
   updateAnomaly: (data: Anomaly) => Promise<void>
 
+  addInventoryCheck: (data: Omit<InventoryCheck, 'id' | 'createdAt' | 'completedAt'>) => Promise<void>
+  updateInventoryCheck: (data: InventoryCheck) => Promise<void>
+  completeInventoryCheck: (id: string) => Promise<void>
+
   setFilters: (filters: Partial<FilterState>) => void
   resetFilters: () => void
   toggleSelect: (id: string) => void
@@ -61,6 +66,7 @@ const defaultFilters: FilterState = {
   borrowStatus: null,
   anomalyType: null,
   searchQuery: '',
+  checkStatus: null,
 }
 
 function getStoredRole(): Role {
@@ -79,6 +85,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   items: [],
   borrowRecords: [],
   anomalies: [],
+  inventoryChecks: [],
   filters: { ...defaultFilters },
   selectedIds: new Set<string>(),
   alerts: [],
@@ -97,13 +104,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const items = await db.getAll<Item>('items')
     const borrowRecords = await db.getAll<BorrowRecord>('borrowRecords')
     const anomalies = await db.getAll<Anomaly>('anomalies')
+    const inventoryChecks = await db.getAll<InventoryCheck>('inventoryChecks')
 
     if (categories.length === 0) {
       await get().seedData()
       return
     }
 
-    set({ categories, locations, responsibles, items, borrowRecords, anomalies, dataLoaded: true })
+    set({ categories, locations, responsibles, items, borrowRecords, anomalies, inventoryChecks, dataLoaded: true })
     get().refreshAlerts()
   },
 
@@ -114,6 +122,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.putMany('items', seedItems)
     await db.putMany('borrowRecords', seedBorrowRecords)
     await db.putMany('anomalies', seedAnomalies)
+    await db.putMany('inventoryChecks', seedInventoryChecks)
 
     set({
       categories: seedCategories,
@@ -122,6 +131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       items: seedItems,
       borrowRecords: seedBorrowRecords,
       anomalies: seedAnomalies,
+      inventoryChecks: seedInventoryChecks,
       dataLoaded: true,
     })
     get().refreshAlerts()
@@ -295,6 +305,47 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ anomalies: s.anomalies.map((a) => (a.id === data.id ? data : a)) }))
   },
 
+  addInventoryCheck: async (data) => {
+    const check: InventoryCheck = { ...data, id: generateId(), createdAt: new Date().toISOString(), completedAt: null }
+    await db.put('inventoryChecks', check)
+    set((s) => ({ inventoryChecks: [...s.inventoryChecks, check] }))
+    get().refreshAlerts()
+  },
+  updateInventoryCheck: async (data) => {
+    await db.put('inventoryChecks', data)
+    set((s) => ({ inventoryChecks: s.inventoryChecks.map((c) => (c.id === data.id ? data : c)) }))
+    get().refreshAlerts()
+  },
+  completeInventoryCheck: async (id) => {
+    const check = get().inventoryChecks.find((c) => c.id === id)
+    if (!check) return
+    const now = new Date().toISOString()
+    const updatedItems = check.items.map((item) => {
+      if (item.actualQuantity !== null) {
+        return { ...item, difference: item.actualQuantity - item.bookQuantity }
+      }
+      return item
+    })
+    const completed: InventoryCheck = { ...check, items: updatedItems, status: 'completed' as const, completedAt: now }
+    await db.put('inventoryChecks', completed)
+
+    for (const item of updatedItems) {
+      if (item.difference !== null && item.difference !== 0) {
+        await get().addAnomaly({
+          borrowRecordId: null,
+          itemId: item.itemId,
+          type: 'quantity_mismatch',
+          description: `盘点差异：物品账面${item.bookQuantity}件，实盘${item.actualQuantity}件，差异${item.difference > 0 ? '+' : ''}${item.difference}件`,
+          status: 'pending',
+        })
+      }
+    }
+
+    const finalChecks = await db.getAll<InventoryCheck>('inventoryChecks')
+    set({ inventoryChecks: finalChecks })
+    get().refreshAlerts()
+  },
+
   setFilters: (newFilters) => {
     set((s) => ({ filters: { ...s.filters, ...newFilters } }))
   },
@@ -331,7 +382,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   refreshAlerts: () => {
-    const { items, borrowRecords, responsibles } = get()
+    const { items, borrowRecords, inventoryChecks } = get()
     const alerts: AlertItem[] = []
 
     items.forEach((item) => {
@@ -352,6 +403,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     items.forEach((item) => {
       if (!item.responsibleId) {
         alerts.push({ id: `resp-${item.id}`, type: 'responsible_missing', title: '责任人空缺', description: `${item.name}未指定责任人`, relatedId: item.id, createdAt: item.createdAt })
+      }
+    })
+
+    inventoryChecks.forEach((check) => {
+      if (check.status === 'pending') {
+        alerts.push({ id: `chk-pending-${check.id}`, type: 'check_pending', title: '待盘点', description: `盘点任务"${check.title}"尚未开始`, relatedId: check.id, createdAt: check.createdAt })
+      } else if (check.status === 'in_progress') {
+        alerts.push({ id: `chk-pending-${check.id}`, type: 'check_pending', title: '盘点中', description: `盘点任务"${check.title}"进行中`, relatedId: check.id, createdAt: check.createdAt })
+      }
+      if (check.status === 'completed') {
+        const hasDiff = check.items.some((i) => i.difference !== null && i.difference !== 0)
+        if (hasDiff) {
+          alerts.push({ id: `chk-diff-${check.id}`, type: 'check_diff', title: '盘点有差异', description: `盘点"${check.title}"存在数量差异`, relatedId: check.id, createdAt: check.completedAt || check.createdAt })
+        }
       }
     })
 

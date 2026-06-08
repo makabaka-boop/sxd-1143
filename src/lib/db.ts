@@ -1,7 +1,7 @@
-import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly } from '@/types'
+import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck } from '@/types'
 
 const DB_NAME = 'OfficeItemDB'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 const STORES = {
   categories: 'categories',
@@ -10,6 +10,7 @@ const STORES = {
   items: 'items',
   borrowRecords: 'borrowRecords',
   anomalies: 'anomalies',
+  inventoryChecks: 'inventoryChecks',
 } as const
 
 function openDB(): Promise<IDBDatabase> {
@@ -63,6 +64,13 @@ function openDB(): Promise<IDBDatabase> {
         store.createIndex('borrowRecordId', 'borrowRecordId', { unique: false })
         store.createIndex('type', 'type', { unique: false })
         store.createIndex('status', 'status', { unique: false })
+      }
+
+      if (!db.objectStoreNames.contains(STORES.inventoryChecks)) {
+        const store = db.createObjectStore(STORES.inventoryChecks, { keyPath: 'id' })
+        store.createIndex('status', 'status', { unique: false })
+        store.createIndex('scope', 'scope', { unique: false })
+        store.createIndex('checkerName', 'checkerName', { unique: false })
       }
     }
   })
@@ -165,4 +173,4 @@ export function generateId(): string {
 }
 
 export { openDB }
-export type { Category, Location, Responsible, Item, BorrowRecord, Anomaly }
+export type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck }

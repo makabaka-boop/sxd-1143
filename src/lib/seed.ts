@@ -1,4 +1,4 @@
-import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly } from '@/types'
+import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck } from '@/types'
 import { generateId } from '@/lib/db'
 
 const now = new Date().toISOString()
@@ -58,4 +58,55 @@ export const seedAnomalies: Anomaly[] = [
   { id: 'ano-4', borrowRecordId: null, itemId: 'item-6', type: 'responsible_missing', description: '文件柜无责任人管理', status: 'pending', createdAt: now, checkedAt: null },
   { id: 'ano-5', borrowRecordId: null, itemId: 'item-9', type: 'responsible_missing', description: '白板无责任人管理', status: 'pending', createdAt: now, checkedAt: null },
   { id: 'ano-6', borrowRecordId: null, itemId: 'item-7', type: 'damaged', description: '安全帽库存为零，无法领用', status: 'pending', createdAt: new Date(Date.now() - 1 * day).toISOString(), checkedAt: null },
+]
+
+export const seedInventoryChecks: InventoryCheck[] = [
+  {
+    id: 'ic-1',
+    title: '办公用品月度盘点',
+    scope: 'category',
+    scopeIds: ['cat-1'],
+    checkerName: '张明',
+    status: 'completed',
+    items: [
+      { itemId: 'item-1', bookQuantity: 350, actualQuantity: 348, difference: -2, note: '2包已拆封使用' },
+      { itemId: 'item-2', bookQuantity: 45, actualQuantity: 40, difference: -5, note: '5支无法找到' },
+      { itemId: 'item-8', bookQuantity: 25, actualQuantity: 25, difference: 0, note: '' },
+      { itemId: 'item-10', bookQuantity: 8, actualQuantity: 6, difference: -2, note: '2个已开封' },
+    ],
+    note: '办公用品常规月度盘点',
+    createdAt: new Date(Date.now() - 7 * day).toISOString(),
+    completedAt: new Date(Date.now() - 6 * day).toISOString(),
+  },
+  {
+    id: 'ic-2',
+    title: 'A栋仓库全面盘点',
+    scope: 'location',
+    scopeIds: ['loc-1'],
+    checkerName: '王刚',
+    status: 'in_progress',
+    items: [
+      { itemId: 'item-1', bookQuantity: 350, actualQuantity: null, difference: null, note: '' },
+      { itemId: 'item-2', bookQuantity: 45, actualQuantity: null, difference: null, note: '' },
+      { itemId: 'item-7', bookQuantity: 0, actualQuantity: null, difference: null, note: '' },
+    ],
+    note: 'A栋仓库季度盘点',
+    createdAt: new Date(Date.now() - 1 * day).toISOString(),
+    completedAt: null,
+  },
+  {
+    id: 'ic-3',
+    title: 'IT设备专项盘点',
+    scope: 'responsible',
+    scopeIds: ['resp-2'],
+    checkerName: '李红',
+    status: 'pending',
+    items: [
+      { itemId: 'item-3', bookQuantity: 5, actualQuantity: null, difference: null, note: '' },
+      { itemId: 'item-4', bookQuantity: 3, actualQuantity: null, difference: null, note: '' },
+    ],
+    note: 'IT部负责设备专项盘点',
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  },
 ]
