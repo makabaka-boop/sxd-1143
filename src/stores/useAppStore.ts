@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { Role, Category, Location, Responsible, Item, ItemStatus, BorrowRecord, Anomaly, FilterState, AlertItem, InventoryCheck } from '@/types'
-import { db, generateId } from '@/lib/db'
-import { seedCategories, seedLocations, seedResponsibles, seedItems, seedBorrowRecords, seedAnomalies, seedInventoryChecks } from '@/lib/seed'
+import type { Role, Category, Location, Responsible, Item, ItemStatus, BorrowRecord, Anomaly, FilterState, AlertItem, InventoryCheck, ReplenishRequest } from '@/types'
+import { db, generateId, resetDB } from '@/lib/db'
+import { seedCategories, seedLocations, seedResponsibles, seedItems, seedBorrowRecords, seedAnomalies, seedInventoryChecks, seedReplenishRequests } from '@/lib/seed'
 
 interface AppState {
   currentRole: Role
@@ -12,6 +12,7 @@ interface AppState {
   borrowRecords: BorrowRecord[]
   anomalies: Anomaly[]
   inventoryChecks: InventoryCheck[]
+  replenishRequests: ReplenishRequest[]
   filters: FilterState
   selectedIds: Set<string>
   alerts: AlertItem[]
@@ -48,6 +49,11 @@ interface AppState {
   addInventoryCheck: (data: Omit<InventoryCheck, 'id' | 'createdAt' | 'completedAt'>) => Promise<void>
   updateInventoryCheck: (data: InventoryCheck) => Promise<void>
   completeInventoryCheck: (id: string) => Promise<void>
+
+  addReplenishRequest: (data: Omit<ReplenishRequest, 'id' | 'status' | 'handlerName' | 'handledAt' | 'remark' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  approveReplenishRequest: (id: string, handlerName: string, remark?: string) => Promise<void>
+  rejectReplenishRequest: (id: string, handlerName: string, remark?: string) => Promise<void>
+  completeReplenishRequest: (id: string, handlerName: string, remark?: string) => Promise<void>
 
   setFilters: (filters: Partial<FilterState>) => void
   resetFilters: () => void
@@ -86,6 +92,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   borrowRecords: [],
   anomalies: [],
   inventoryChecks: [],
+  replenishRequests: [],
   filters: { ...defaultFilters },
   selectedIds: new Set<string>(),
   alerts: [],
@@ -98,21 +105,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadData: async () => {
     if (get().dataLoaded) return
-    const categories = await db.getAll<Category>('categories')
-    const locations = await db.getAll<Location>('locations')
-    const responsibles = await db.getAll<Responsible>('responsibles')
-    const items = await db.getAll<Item>('items')
-    const borrowRecords = await db.getAll<BorrowRecord>('borrowRecords')
-    const anomalies = await db.getAll<Anomaly>('anomalies')
-    const inventoryChecks = await db.getAll<InventoryCheck>('inventoryChecks')
+    try {
+      const categories = await db.getAll<Category>('categories')
+      const locations = await db.getAll<Location>('locations')
+      const responsibles = await db.getAll<Responsible>('responsibles')
+      const items = await db.getAll<Item>('items')
+      const borrowRecords = await db.getAll<BorrowRecord>('borrowRecords')
+      const anomalies = await db.getAll<Anomaly>('anomalies')
+      const inventoryChecks = await db.getAll<InventoryCheck>('inventoryChecks')
+      const replenishRequests = await db.getAll<ReplenishRequest>('replenishRequests')
 
-    if (categories.length === 0) {
+      if (categories.length === 0) {
+        await get().seedData()
+        return
+      }
+
+      set({ categories, locations, responsibles, items, borrowRecords, anomalies, inventoryChecks, replenishRequests, dataLoaded: true })
+      get().refreshAlerts()
+    } catch {
+      await resetDB()
       await get().seedData()
-      return
     }
-
-    set({ categories, locations, responsibles, items, borrowRecords, anomalies, inventoryChecks, dataLoaded: true })
-    get().refreshAlerts()
   },
 
   seedData: async () => {
@@ -123,6 +136,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.putMany('borrowRecords', seedBorrowRecords)
     await db.putMany('anomalies', seedAnomalies)
     await db.putMany('inventoryChecks', seedInventoryChecks)
+    await db.putMany('replenishRequests', seedReplenishRequests)
 
     set({
       categories: seedCategories,
@@ -132,6 +146,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       borrowRecords: seedBorrowRecords,
       anomalies: seedAnomalies,
       inventoryChecks: seedInventoryChecks,
+      replenishRequests: seedReplenishRequests,
       dataLoaded: true,
     })
     get().refreshAlerts()
@@ -346,6 +361,66 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refreshAlerts()
   },
 
+  addReplenishRequest: async (data) => {
+    const now = new Date().toISOString()
+    const req: ReplenishRequest = {
+      ...data,
+      id: generateId(),
+      status: 'pending',
+      handlerName: null,
+      handledAt: null,
+      remark: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.put('replenishRequests', req)
+    set((s) => ({ replenishRequests: [...s.replenishRequests, req] }))
+    get().refreshAlerts()
+  },
+  approveReplenishRequest: async (id, handlerName, remark) => {
+    const req = get().replenishRequests.find((r) => r.id === id)
+    if (!req || req.status !== 'pending') return
+    const now = new Date().toISOString()
+    const updated: ReplenishRequest = { ...req, status: 'approved', handlerName, handledAt: now, remark: remark ?? null, updatedAt: now }
+    await db.put('replenishRequests', updated)
+    set((s) => ({ replenishRequests: s.replenishRequests.map((r) => (r.id === id ? updated : r)) }))
+    get().refreshAlerts()
+  },
+  rejectReplenishRequest: async (id, handlerName, remark) => {
+    const req = get().replenishRequests.find((r) => r.id === id)
+    if (!req || req.status !== 'pending') return
+    const now = new Date().toISOString()
+    const updated: ReplenishRequest = { ...req, status: 'rejected', handlerName, handledAt: now, remark: remark ?? null, updatedAt: now }
+    await db.put('replenishRequests', updated)
+    set((s) => ({ replenishRequests: s.replenishRequests.map((r) => (r.id === id ? updated : r)) }))
+    get().refreshAlerts()
+  },
+  completeReplenishRequest: async (id, handlerName, remark) => {
+    const req = get().replenishRequests.find((r) => r.id === id)
+    if (!req || req.status !== 'approved') return
+    const now = new Date().toISOString()
+    const updated: ReplenishRequest = { ...req, status: 'warehoused', handlerName, handledAt: now, remark: remark ?? null, updatedAt: now }
+    await db.put('replenishRequests', updated)
+    const item = get().items.find((i) => i.id === req.itemId)
+    if (item) {
+      await get().updateItem({
+        ...item,
+        availableQuantity: item.availableQuantity + req.quantity,
+        totalQuantity: item.totalQuantity + req.quantity,
+      })
+    }
+    await get().addAnomaly({
+      borrowRecordId: null,
+      itemId: req.itemId,
+      type: 'replenish_request',
+      description: `补货入库完成：${req.applicantName}申请的${item?.name || '物品'}x${req.quantity}件已入库`,
+      status: 'resolved',
+      replenishQuantity: req.quantity,
+    })
+    set((s) => ({ replenishRequests: s.replenishRequests.map((r) => (r.id === id ? updated : r)) }))
+    get().refreshAlerts()
+  },
+
   setFilters: (newFilters) => {
     set((s) => ({ filters: { ...s.filters, ...newFilters } }))
   },
@@ -382,7 +457,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   refreshAlerts: () => {
-    const { items, borrowRecords, inventoryChecks } = get()
+    const { items, borrowRecords, inventoryChecks, replenishRequests } = get()
     const alerts: AlertItem[] = []
 
     items.forEach((item) => {
@@ -417,6 +492,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (hasDiff) {
           alerts.push({ id: `chk-diff-${check.id}`, type: 'check_diff', title: '盘点有差异', description: `盘点"${check.title}"存在数量差异`, relatedId: check.id, createdAt: check.completedAt || check.createdAt })
         }
+      }
+    })
+
+    replenishRequests.forEach((req) => {
+      const item = items.find((i) => i.id === req.itemId)
+      if (req.status === 'pending') {
+        alerts.push({ id: `replenish-pending-${req.id}`, type: 'replenish_pending', title: '待审批补货申请', description: `${req.applicantName}申请补充${item?.name || '物品'}x${req.quantity}件`, relatedId: req.id, createdAt: req.createdAt })
+      } else if (req.status === 'approved') {
+        alerts.push({ id: `replenish-approved-${req.id}`, type: 'replenish_approved', title: '待入库补货', description: `${item?.name || '物品'}x${req.quantity}件已审批，待入库`, relatedId: req.id, createdAt: req.updatedAt })
       }
     })
 

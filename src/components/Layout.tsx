@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Settings, FileText, ShieldCheck, Bell, ChevronLeft, ChevronRight, Users, UserCog, Eye, ClipboardCheck } from 'lucide-react'
+import { LayoutDashboard, Settings, FileText, ShieldCheck, Bell, ChevronLeft, ChevronRight, Users, UserCog, Eye, ClipboardCheck, PackagePlus } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import type { Role, AlertItem } from '@/types'
 
@@ -8,6 +8,7 @@ const navItems = [
   { path: '/', label: '物品总览', icon: LayoutDashboard, roles: ['admin', 'user', 'auditor'] },
   { path: '/manage', label: '物品管理', icon: Settings, roles: ['admin'] },
   { path: '/borrow', label: '领用登记', icon: FileText, roles: ['admin', 'user'] },
+  { path: '/replenish', label: '补货申请', icon: PackagePlus, roles: ['admin', 'user'] },
   { path: '/inventory-check', label: '库存盘点', icon: ClipboardCheck, roles: ['admin', 'auditor'] },
   { path: '/audit', label: '异常核对', icon: ShieldCheck, roles: ['admin', 'auditor'] },
 ]
@@ -156,6 +157,8 @@ function AlertPanel({ alerts, onClose }: { alerts: AlertItem[]; onClose: () => v
     responsible_missing: { label: '责任人空缺', color: 'text-blue-400', bg: 'bg-blue-500/10' },
     check_pending: { label: '待盘点', color: 'text-purple-400', bg: 'bg-purple-500/10' },
     check_diff: { label: '盘点差异', color: 'text-orange-400', bg: 'bg-orange-500/10' },
+    replenish_pending: { label: '待审批补货', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    replenish_approved: { label: '待入库', color: 'text-blue-400', bg: 'bg-blue-500/10' },
   }
 
   return (

@@ -103,9 +103,26 @@ export interface FilterState {
 
 export type BatchAction = 'return' | 'replenish' | 'check'
 
+export type ReplenishStatus = 'pending' | 'approved' | 'rejected' | 'warehoused'
+
+export interface ReplenishRequest {
+  id: string
+  itemId: string
+  applicantName: string
+  quantity: number
+  purpose: string
+  expectedDate: string
+  status: ReplenishStatus
+  handlerName: string | null
+  handledAt: string | null
+  remark: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AlertItem {
   id: string
-  type: 'low_stock' | 'overdue' | 'responsible_missing' | 'check_pending' | 'check_diff'
+  type: 'low_stock' | 'overdue' | 'responsible_missing' | 'check_pending' | 'check_diff' | 'replenish_pending' | 'replenish_approved'
   title: string
   description: string
   relatedId: string

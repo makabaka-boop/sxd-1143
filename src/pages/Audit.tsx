@@ -4,7 +4,7 @@ import type { AnomalyType, AnomalyStatus, Anomaly } from '@/types'
 import { ShieldCheck, ChevronDown, ChevronUp, Eye, Search, CheckCircle, XCircle, PackagePlus } from 'lucide-react'
 
 export default function Audit() {
-  const { anomalies, borrowRecords, items, categories, responsibles, locations, currentRole, updateAnomaly, updateItem } = useAppStore()
+  const { anomalies, borrowRecords, items, categories, responsibles, locations, currentRole, updateAnomaly, updateItem, replenishRequests } = useAppStore()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filterType, setFilterType] = useState<AnomalyType | ''>('')
   const [filterStatus, setFilterStatus] = useState<AnomalyStatus | ''>('')
@@ -203,10 +203,61 @@ export default function Audit() {
                       </>
                     )}
                     {anomaly.type === 'replenish_request' && anomaly.replenishQuantity && (
-                      <div>
-                        <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>申请补充数量</span>
-                        <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>+{anomaly.replenishQuantity} 件</span>
-                      </div>
+                      <>
+                        <div>
+                          <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>申请补充数量</span>
+                          <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>+{anomaly.replenishQuantity} 件</span>
+                        </div>
+                        {(() => {
+                          const relatedReq = replenishRequests.find((r) => r.itemId === anomaly.itemId && r.quantity === anomaly.replenishQuantity)
+                          if (!relatedReq) return null
+                          const statusCfg: Record<string, { label: string; badge: string }> = {
+                            pending: { label: '待审批', badge: 'badge-warning' },
+                            approved: { label: '已审批/待入库', badge: 'badge-info' },
+                            rejected: { label: '已驳回', badge: 'badge-danger' },
+                            warehoused: { label: '已入库', badge: 'badge-success' },
+                          }
+                          const sc = statusCfg[relatedReq.status]
+                          return (
+                            <>
+                              <div>
+                                <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>申请人</span>
+                                <span className="text-sm">{relatedReq.applicantName}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>用途说明</span>
+                                <span className="text-sm">{relatedReq.purpose || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>期望到货日期</span>
+                                <span className="text-sm">{relatedReq.expectedDate ? new Date(relatedReq.expectedDate).toLocaleDateString() : '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>申请状态</span>
+                                <span className={`badge ${sc.badge}`}>{sc.label}</span>
+                              </div>
+                              {relatedReq.handlerName && (
+                                <div>
+                                  <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>处理人</span>
+                                  <span className="text-sm">{relatedReq.handlerName}</span>
+                                </div>
+                              )}
+                              {relatedReq.handledAt && (
+                                <div>
+                                  <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>处理时间</span>
+                                  <span className="text-sm">{new Date(relatedReq.handledAt).toLocaleString()}</span>
+                                </div>
+                              )}
+                              {relatedReq.remark && (
+                                <div>
+                                  <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>备注</span>
+                                  <span className="text-sm">{relatedReq.remark}</span>
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </>
                     )}
                     {record && (
                       <>

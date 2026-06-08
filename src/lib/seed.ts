@@ -1,4 +1,4 @@
-import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck } from '@/types'
+import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck, ReplenishRequest } from '@/types'
 import { generateId } from '@/lib/db'
 
 const now = new Date().toISOString()
@@ -108,5 +108,64 @@ export const seedInventoryChecks: InventoryCheck[] = [
     note: 'IT部负责设备专项盘点',
     createdAt: new Date().toISOString(),
     completedAt: null,
+  },
+]
+
+export const seedReplenishRequests: ReplenishRequest[] = [
+  {
+    id: 'rr-1',
+    itemId: 'item-7',
+    applicantName: '王刚',
+    quantity: 50,
+    purpose: '安全帽库存为零，急需补充以满足工地需求',
+    expectedDate: new Date(Date.now() + 3 * day).toISOString().split('T')[0],
+    status: 'pending',
+    handlerName: null,
+    handledAt: null,
+    remark: null,
+    createdAt: new Date(Date.now() - 1 * day).toISOString(),
+    updatedAt: new Date(Date.now() - 1 * day).toISOString(),
+  },
+  {
+    id: 'rr-2',
+    itemId: 'item-2',
+    applicantName: '张明',
+    quantity: 100,
+    purpose: '签字笔库存低于预警阈值，补充日常办公用',
+    expectedDate: new Date(Date.now() + 5 * day).toISOString().split('T')[0],
+    status: 'approved',
+    handlerName: '管理员',
+    handledAt: new Date(Date.now() - 0.5 * day).toISOString(),
+    remark: '已联系供应商，预计按时到货',
+    createdAt: new Date(Date.now() - 2 * day).toISOString(),
+    updatedAt: new Date(Date.now() - 0.5 * day).toISOString(),
+  },
+  {
+    id: 'rr-3',
+    itemId: 'item-10',
+    applicantName: '陈伟',
+    quantity: 20,
+    purpose: '打印机墨盒即将耗尽，需及时补充',
+    expectedDate: new Date(Date.now() + 7 * day).toISOString().split('T')[0],
+    status: 'warehoused',
+    handlerName: '管理员',
+    handledAt: new Date(Date.now() - 3 * day).toISOString(),
+    remark: '已入库',
+    createdAt: new Date(Date.now() - 7 * day).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * day).toISOString(),
+  },
+  {
+    id: 'rr-4',
+    itemId: 'item-9',
+    applicantName: '李红',
+    quantity: 5,
+    purpose: '白板库存不足，会议室需要补充',
+    expectedDate: new Date(Date.now() + 10 * day).toISOString().split('T')[0],
+    status: 'rejected',
+    handlerName: '管理员',
+    handledAt: new Date(Date.now() - 1 * day).toISOString(),
+    remark: '本月预算不足，下月再申请',
+    createdAt: new Date(Date.now() - 3 * day).toISOString(),
+    updatedAt: new Date(Date.now() - 1 * day).toISOString(),
   },
 ]

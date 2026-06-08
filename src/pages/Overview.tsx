@@ -2,19 +2,22 @@ import { useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
 import type { FilterState } from '@/types'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { Search, AlertTriangle, Package, ArrowRightLeft, ClipboardList, RotateCcw, AlertCircle, X, PlusCircle, ClipboardCheck } from 'lucide-react'
+import { Search, AlertTriangle, Package, ArrowRightLeft, ClipboardList, RotateCcw, AlertCircle, X, PlusCircle, ClipboardCheck, Truck } from 'lucide-react'
 
 export default function Overview() {
   const {
-    items, borrowRecords, categories, locations, responsibles, anomalies, inventoryChecks,
+    items, borrowRecords, categories, locations, responsibles, anomalies, inventoryChecks, replenishRequests,
     filters, selectedIds, currentRole, alerts,
     setFilters, resetFilters, toggleSelect, selectAll, clearSelection,
-    batchReturnBorrowRecords, addAnomaly,
+    batchReturnBorrowRecords, addAnomaly, addReplenishRequest,
   } = useAppStore()
 
   const [pendingFilter, setPendingFilter] = useState<Partial<FilterState> | null>(null)
   const [showReplenish, setShowReplenish] = useState(false)
   const [replenishQty, setReplenishQty] = useState(10)
+  const [replenishPurpose, setReplenishPurpose] = useState('')
+  const [replenishApplicant, setReplenishApplicant] = useState('')
+  const [replenishExpectedDate, setReplenishExpectedDate] = useState('')
 
   const filteredItems = useMemo(() => items.filter((item) => {
     if (filters.searchQuery && !item.name.toLowerCase().includes(filters.searchQuery.toLowerCase())) return false
@@ -65,6 +68,8 @@ export default function Overview() {
   const respMissingCount = alerts.filter((a) => a.type === 'responsible_missing').length
   const checkPendingCount = alerts.filter((a) => a.type === 'check_pending').length
   const checkDiffCount = alerts.filter((a) => a.type === 'check_diff').length
+  const replenishPendingCount = alerts.filter((a) => a.type === 'replenish_pending').length
+  const replenishApprovedCount = alerts.filter((a) => a.type === 'replenish_approved').length
 
   const catName = (id: string) => categories.find((c) => c.id === id)?.name ?? '-'
   const locName = (id: string) => locations.find((l) => l.id === id)?.name ?? '-'
@@ -129,24 +134,27 @@ export default function Overview() {
     }
   }
 
-  const handleReplenish = () => {
+  const handleReplenish = async () => {
     const visibleSelected = selectedArr.filter((id) => visibleItemIds.has(id))
+    const applicant = replenishApplicant.trim() || '当前用户'
     for (const id of visibleSelected) {
       const item = items.find((i) => i.id === id)
       if (item) {
-        addAnomaly({
-          borrowRecordId: null,
+        await addReplenishRequest({
           itemId: id,
-          type: 'replenish_request' as const,
-          description: `申请补充"${item.name}"库存 ${replenishQty} 件，当前库存 ${item.availableQuantity}/${item.totalQuantity}`,
-          status: 'pending' as const,
-          replenishQuantity: replenishQty,
+          applicantName: applicant,
+          quantity: replenishQty,
+          purpose: replenishPurpose.trim(),
+          expectedDate: replenishExpectedDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         })
       }
     }
     clearSelection()
     setShowReplenish(false)
     setReplenishQty(10)
+    setReplenishPurpose('')
+    setReplenishApplicant('')
+    setReplenishExpectedDate('')
   }
 
   return (
@@ -181,6 +189,16 @@ export default function Overview() {
             <ClipboardCheck size={16} style={{ color: '#f97316' }} />
             <span className="text-sm">盘点差异</span>
             <span className="badge badge-danger">{checkDiffCount}</span>
+          </div>
+          <div className="card px-4 py-2 flex items-center gap-2 cursor-pointer hover:border-emerald-500 transition-colors" style={{ borderColor: replenishPendingCount > 0 ? 'var(--accent)' : 'var(--border-color)' }}>
+            <Truck size={16} style={{ color: 'var(--accent)' }} />
+            <span className="text-sm">待审批补货</span>
+            <span className="badge badge-success">{replenishPendingCount}</span>
+          </div>
+          <div className="card px-4 py-2 flex items-center gap-2 cursor-pointer hover:border-blue-500 transition-colors" style={{ borderColor: replenishApprovedCount > 0 ? 'var(--info)' : 'var(--border-color)' }}>
+            <Truck size={16} style={{ color: 'var(--info)' }} />
+            <span className="text-sm">待入库</span>
+            <span className="badge badge-info">{replenishApprovedCount}</span>
           </div>
         </div>
       </div>
@@ -320,14 +338,34 @@ export default function Overview() {
       {showReplenish && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReplenish(false)} />
-          <div className="relative rounded-xl p-6 w-full max-w-sm shadow-2xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-            <h3 className="font-semibold text-base mb-4">补充申请</h3>
-            <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>为 {selectedIds.size} 件物品提交补充申请，管理员审核后入库</p>
-            <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>补充数量</label>
-            <input type="number" className="input-field" min={1} value={replenishQty} onChange={(e) => setReplenishQty(Math.max(1, Number(e.target.value)))} />
+          <div className="relative rounded-xl p-6 w-full max-w-md shadow-2xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
+            <h3 className="font-semibold text-base mb-4 flex items-center gap-2">
+              <Truck size={18} style={{ color: 'var(--accent)' }} /> 补货申请
+            </h3>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>为 {selectedIds.size} 件物品提交补货申请，管理员审核后入库</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>申请人</label>
+                <input className="input-field" placeholder="请输入申请人姓名" value={replenishApplicant} onChange={(e) => setReplenishApplicant(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>补充数量</label>
+                <input type="number" className="input-field" min={1} value={replenishQty} onChange={(e) => setReplenishQty(Math.max(1, Number(e.target.value)))} />
+              </div>
+              <div>
+                <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>用途说明</label>
+                <textarea className="input-field resize-none" rows={2} placeholder="请填写补货用途说明" value={replenishPurpose} onChange={(e) => setReplenishPurpose(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>期望到货日期</label>
+                <input type="date" className="input-field" value={replenishExpectedDate} onChange={(e) => setReplenishExpectedDate(e.target.value)} />
+              </div>
+            </div>
             <div className="flex justify-end gap-3 mt-5">
               <button className="btn-secondary" onClick={() => setShowReplenish(false)}>取消</button>
-              <button className="btn-primary" onClick={handleReplenish}>提交申请</button>
+              <button className="btn-primary flex items-center gap-1.5" onClick={handleReplenish}>
+                <Truck size={14} /> 提交申请
+              </button>
             </div>
           </div>
         </div>

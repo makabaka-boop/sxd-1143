@@ -6,6 +6,7 @@ import Manage from '@/pages/Manage'
 import Borrow from '@/pages/Borrow'
 import Audit from '@/pages/Audit'
 import InventoryCheckPage from '@/pages/InventoryCheck'
+import Replenish from '@/pages/Replenish'
 import { useAppStore } from '@/stores/useAppStore'
 import type { Role } from '@/types'
 
@@ -14,6 +15,7 @@ const roleRoutes: Record<string, Role[]> = {
   '/borrow': ['admin', 'user'],
   '/audit': ['admin', 'auditor'],
   '/inventory-check': ['admin', 'auditor'],
+  '/replenish': ['admin', 'user'],
 }
 
 function ProtectedRoute({ path, children }: { path: string; children: React.ReactNode }) {
@@ -42,6 +44,7 @@ function AppContent() {
         <Route path="/borrow" element={<ProtectedRoute path="/borrow"><Borrow /></ProtectedRoute>} />
         <Route path="/audit" element={<ProtectedRoute path="/audit"><Audit /></ProtectedRoute>} />
         <Route path="/inventory-check" element={<ProtectedRoute path="/inventory-check"><InventoryCheckPage /></ProtectedRoute>} />
+        <Route path="/replenish" element={<ProtectedRoute path="/replenish"><Replenish /></ProtectedRoute>} />
       </Routes>
     </Layout>
   )

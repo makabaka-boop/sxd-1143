@@ -1,7 +1,7 @@
-import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck } from '@/types'
+import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck, ReplenishRequest } from '@/types'
 
 const DB_NAME = 'OfficeItemDB'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 const STORES = {
   categories: 'categories',
@@ -11,16 +11,23 @@ const STORES = {
   borrowRecords: 'borrowRecords',
   anomalies: 'anomalies',
   inventoryChecks: 'inventoryChecks',
+  replenishRequests: 'replenishRequests',
 } as const
 
+let dbInstance: IDBDatabase | null = null
+
 function openDB(): Promise<IDBDatabase> {
+  if (dbInstance && !dbInstance.closed) return Promise.resolve(dbInstance)
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      dbInstance = request.result
+      resolve(request.result)
+    }
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
-      const oldVersion = (event.target as IDBOpenDBRequest).transaction?.db?.version ?? 0
+      const oldVersion = (event as IDBVersionChangeEvent).oldVersion
 
       if (oldVersion > 0 && oldVersion < DB_VERSION) {
         for (const name of Array.from(db.objectStoreNames)) {
@@ -71,6 +78,13 @@ function openDB(): Promise<IDBDatabase> {
         store.createIndex('status', 'status', { unique: false })
         store.createIndex('scope', 'scope', { unique: false })
         store.createIndex('checkerName', 'checkerName', { unique: false })
+      }
+
+      if (!db.objectStoreNames.contains(STORES.replenishRequests)) {
+        const store = db.createObjectStore(STORES.replenishRequests, { keyPath: 'id' })
+        store.createIndex('itemId', 'itemId', { unique: false })
+        store.createIndex('status', 'status', { unique: false })
+        store.createIndex('applicantName', 'applicantName', { unique: false })
       }
     }
   })
@@ -168,9 +182,22 @@ export const db = {
   STORES,
 }
 
+export async function resetDB(): Promise<void> {
+  if (dbInstance) {
+    dbInstance.close()
+    dbInstance = null
+  }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error)
+    request.onblocked = () => resolve()
+  })
+}
+
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9)
 }
 
 export { openDB }
-export type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck }
+export type { Category, Location, Responsible, Item, BorrowRecord, Anomaly, InventoryCheck, ReplenishRequest }
