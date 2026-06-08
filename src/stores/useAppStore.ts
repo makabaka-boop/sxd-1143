@@ -1,0 +1,321 @@
+import { create } from 'zustand'
+import type { Role, Category, Location, Responsible, Item, ItemStatus, BorrowRecord, Anomaly, FilterState, AlertItem } from '@/types'
+import { db, generateId } from '@/lib/db'
+import { seedCategories, seedLocations, seedResponsibles, seedItems, seedBorrowRecords, seedAnomalies } from '@/lib/seed'
+
+interface AppState {
+  currentRole: Role
+  categories: Category[]
+  locations: Location[]
+  responsibles: Responsible[]
+  items: Item[]
+  borrowRecords: BorrowRecord[]
+  anomalies: Anomaly[]
+  filters: FilterState
+  selectedIds: Set<string>
+  alerts: AlertItem[]
+  dataLoaded: boolean
+
+  setRole: (role: Role) => void
+  loadData: () => Promise<void>
+  seedData: () => Promise<void>
+
+  addCategory: (data: Omit<Category, 'id' | 'createdAt'>) => Promise<void>
+  updateCategory: (data: Category) => Promise<void>
+  deleteCategory: (id: string) => Promise<void>
+
+  addLocation: (data: Omit<Location, 'id'>) => Promise<void>
+  updateLocation: (data: Location) => Promise<void>
+  deleteLocation: (id: string) => Promise<void>
+
+  addResponsible: (data: Omit<Responsible, 'id'>) => Promise<void>
+  updateResponsible: (data: Responsible) => Promise<void>
+  deleteResponsible: (id: string) => Promise<void>
+
+  addItem: (data: Omit<Item, 'id' | 'createdAt' | 'updatedAt' | 'status'>) => Promise<void>
+  updateItem: (data: Item) => Promise<void>
+  deleteItem: (id: string) => Promise<void>
+  batchUpdateItems: (ids: string[], updates: Partial<Item>) => Promise<void>
+
+  addBorrowRecord: (data: Omit<BorrowRecord, 'id' | 'status'>) => Promise<void>
+  returnBorrowRecord: (id: string, actualReturnDate: string) => Promise<void>
+  batchReturnBorrowRecords: (ids: string[], actualReturnDate: string) => Promise<void>
+
+  addAnomaly: (data: Omit<Anomaly, 'id' | 'createdAt' | 'checkedAt'>) => Promise<void>
+  updateAnomaly: (data: Anomaly) => Promise<void>
+
+  setFilters: (filters: Partial<FilterState>) => void
+  resetFilters: () => void
+  toggleSelect: (id: string) => void
+  selectAll: (ids: string[]) => void
+  clearSelection: () => void
+  removeHiddenSelections: (visibleIds: string[]) => void
+
+  refreshAlerts: () => void
+}
+
+const defaultFilters: FilterState = {
+  category: null,
+  location: null,
+  responsible: null,
+  borrowStatus: null,
+  anomalyType: null,
+  searchQuery: '',
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
+  currentRole: 'admin',
+  categories: [],
+  locations: [],
+  responsibles: [],
+  items: [],
+  borrowRecords: [],
+  anomalies: [],
+  filters: { ...defaultFilters },
+  selectedIds: new Set<string>(),
+  alerts: [],
+  dataLoaded: false,
+
+  setRole: (role) => {
+    set({ currentRole: role, selectedIds: new Set() })
+  },
+
+  loadData: async () => {
+    if (get().dataLoaded) return
+    const categories = await db.getAll<Category>('categories')
+    const locations = await db.getAll<Location>('locations')
+    const responsibles = await db.getAll<Responsible>('responsibles')
+    const items = await db.getAll<Item>('items')
+    const borrowRecords = await db.getAll<BorrowRecord>('borrowRecords')
+    const anomalies = await db.getAll<Anomaly>('anomalies')
+
+    if (categories.length === 0) {
+      await get().seedData()
+      return
+    }
+
+    set({ categories, locations, responsibles, items, borrowRecords, anomalies, dataLoaded: true })
+    get().refreshAlerts()
+  },
+
+  seedData: async () => {
+    await db.putMany('categories', seedCategories)
+    await db.putMany('locations', seedLocations)
+    await db.putMany('responsibles', seedResponsibles)
+    await db.putMany('items', seedItems)
+    await db.putMany('borrowRecords', seedBorrowRecords)
+    await db.putMany('anomalies', seedAnomalies)
+
+    set({
+      categories: seedCategories,
+      locations: seedLocations,
+      responsibles: seedResponsibles,
+      items: seedItems,
+      borrowRecords: seedBorrowRecords,
+      anomalies: seedAnomalies,
+      dataLoaded: true,
+    })
+    get().refreshAlerts()
+  },
+
+  addCategory: async (data) => {
+    const item: Category = { ...data, id: generateId(), createdAt: new Date().toISOString() }
+    await db.put('categories', item)
+    set((s) => ({ categories: [...s.categories, item] }))
+  },
+  updateCategory: async (data) => {
+    await db.put('categories', data)
+    set((s) => ({ categories: s.categories.map((c) => (c.id === data.id ? data : c)) }))
+  },
+  deleteCategory: async (id) => {
+    await db.deleteById('categories', id)
+    set((s) => ({ categories: s.categories.filter((c) => c.id !== id) }))
+  },
+
+  addLocation: async (data) => {
+    const item: Location = { ...data, id: generateId() }
+    await db.put('locations', item)
+    set((s) => ({ locations: [...s.locations, item] }))
+  },
+  updateLocation: async (data) => {
+    await db.put('locations', data)
+    set((s) => ({ locations: s.locations.map((l) => (l.id === data.id ? data : l)) }))
+  },
+  deleteLocation: async (id) => {
+    await db.deleteById('locations', id)
+    set((s) => ({ locations: s.locations.filter((l) => l.id !== id) }))
+  },
+
+  addResponsible: async (data) => {
+    const item: Responsible = { ...data, id: generateId() }
+    await db.put('responsibles', item)
+    set((s) => ({ responsibles: [...s.responsibles, item] }))
+    get().refreshAlerts()
+  },
+  updateResponsible: async (data) => {
+    await db.put('responsibles', data)
+    set((s) => ({ responsibles: s.responsibles.map((r) => (r.id === data.id ? data : r)) }))
+    get().refreshAlerts()
+  },
+  deleteResponsible: async (id) => {
+    await db.deleteById('responsibles', id)
+    set((s) => ({ responsibles: s.responsibles.filter((r) => r.id !== id) }))
+    get().refreshAlerts()
+  },
+
+  addItem: async (data) => {
+    const now = new Date().toISOString()
+    const status = data.availableQuantity <= 0 ? 'out_of_stock' : data.availableQuantity < data.lowStockThreshold ? 'low_stock' : 'normal'
+    const item: Item = { ...data, id: generateId(), status, createdAt: now, updatedAt: now }
+    await db.put('items', item)
+    set((s) => ({ items: [...s.items, item] }))
+    get().refreshAlerts()
+  },
+  updateItem: async (data) => {
+    const status: ItemStatus = data.availableQuantity <= 0 ? 'out_of_stock' : data.availableQuantity < data.lowStockThreshold ? 'low_stock' : 'normal'
+    const updated: Item = { ...data, status, updatedAt: new Date().toISOString() }
+    await db.put('items', updated)
+    set((s) => ({ items: s.items.map((i) => (i.id === updated.id ? updated : i)) }))
+    get().refreshAlerts()
+  },
+  deleteItem: async (id) => {
+    await db.deleteById('items', id)
+    set((s) => ({ items: s.items.filter((i) => i.id !== id) }))
+    get().refreshAlerts()
+  },
+  batchUpdateItems: async (ids, updates) => {
+    const items = get().items
+    const updatedItems: Item[] = items
+      .filter((i) => ids.includes(i.id))
+      .map((i) => {
+        const merged = { ...i, ...updates, updatedAt: new Date().toISOString() } as Item
+        if ('availableQuantity' in updates || 'lowStockThreshold' in updates) {
+          const s: ItemStatus = merged.availableQuantity <= 0 ? 'out_of_stock' : merged.availableQuantity < merged.lowStockThreshold ? 'low_stock' : 'normal'
+          merged.status = s
+        }
+        return merged
+      })
+    await db.putMany('items', updatedItems)
+    const finalItems: Item[] = get().items.map((i) => {
+      const updated = updatedItems.find((u) => u.id === i.id)
+      return updated || i
+    })
+    set({ items: finalItems, selectedIds: new Set() })
+    get().refreshAlerts()
+  },
+
+  addBorrowRecord: async (data) => {
+    const record: BorrowRecord = { ...data, id: generateId(), status: 'borrowed' }
+    await db.put('borrowRecords', record)
+    const item = get().items.find((i) => i.id === data.itemId)
+    if (item) {
+      const newQty = Math.max(0, item.availableQuantity - data.quantity)
+      await get().updateItem({ ...item, availableQuantity: newQty })
+    }
+    set((s) => ({ borrowRecords: [...s.borrowRecords, record] }))
+  },
+  returnBorrowRecord: async (id, actualReturnDate) => {
+    const record = get().borrowRecords.find((r) => r.id === id)
+    if (!record) return
+    const updated: BorrowRecord = { ...record, actualReturnDate, status: 'returned' }
+    await db.put('borrowRecords', updated)
+    const item = get().items.find((i) => i.id === record.itemId)
+    if (item) {
+      await get().updateItem({ ...item, availableQuantity: item.availableQuantity + record.quantity })
+    }
+    set((s) => ({
+      borrowRecords: s.borrowRecords.map((r) => (r.id === id ? updated : r)),
+    }))
+  },
+  batchReturnBorrowRecords: async (ids, actualReturnDate) => {
+    const records = get().borrowRecords.filter((r) => ids.includes(r.id) && r.status !== 'returned')
+    for (const record of records) {
+      const updated: BorrowRecord = { ...record, actualReturnDate, status: 'returned' }
+      await db.put('borrowRecords', updated)
+      const item = get().items.find((i) => i.id === record.itemId)
+      if (item) {
+        const newQty = item.availableQuantity + record.quantity
+        const status = newQty <= 0 ? 'out_of_stock' : newQty < item.lowStockThreshold ? 'low_stock' : 'normal'
+        const updatedItem = { ...item, availableQuantity: newQty, status, updatedAt: new Date().toISOString() }
+        await db.put('items', updatedItem)
+      }
+    }
+    const allRecords = await db.getAll<BorrowRecord>('borrowRecords')
+    const allItems = await db.getAll<Item>('items')
+    set({ borrowRecords: allRecords, items: allItems, selectedIds: new Set() })
+    get().refreshAlerts()
+  },
+
+  addAnomaly: async (data) => {
+    const anomaly: Anomaly = { ...data, id: generateId(), createdAt: new Date().toISOString(), checkedAt: null }
+    await db.put('anomalies', anomaly)
+    set((s) => ({ anomalies: [...s.anomalies, anomaly] }))
+  },
+  updateAnomaly: async (data) => {
+    await db.put('anomalies', data)
+    set((s) => ({ anomalies: s.anomalies.map((a) => (a.id === data.id ? data : a)) }))
+  },
+
+  setFilters: (newFilters) => {
+    set((s) => ({ filters: { ...s.filters, ...newFilters } }))
+  },
+  resetFilters: () => {
+    set({ filters: { ...defaultFilters } })
+  },
+  toggleSelect: (id) => {
+    set((s) => {
+      const next = new Set(s.selectedIds)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return { selectedIds: next }
+    })
+  },
+  selectAll: (ids) => {
+    set((s) => {
+      const next = new Set(s.selectedIds)
+      for (const id of ids) next.add(id)
+      return { selectedIds: next }
+    })
+  },
+  clearSelection: () => {
+    set({ selectedIds: new Set() })
+  },
+  removeHiddenSelections: (visibleIds) => {
+    set((s) => {
+      const visibleSet = new Set(visibleIds)
+      const next = new Set<string>()
+      for (const id of s.selectedIds) {
+        if (visibleSet.has(id)) next.add(id)
+      }
+      return { selectedIds: next }
+    })
+  },
+
+  refreshAlerts: () => {
+    const { items, borrowRecords, responsibles } = get()
+    const alerts: AlertItem[] = []
+
+    items.forEach((item) => {
+      if (item.availableQuantity <= 0) {
+        alerts.push({ id: `low-${item.id}`, type: 'low_stock', title: '库存耗尽', description: `${item.name}库存为零`, relatedId: item.id, createdAt: item.updatedAt })
+      } else if (item.availableQuantity < item.lowStockThreshold) {
+        alerts.push({ id: `low-${item.id}`, type: 'low_stock', title: '库存不足', description: `${item.name}仅剩${item.availableQuantity}件（阈值${item.lowStockThreshold}）`, relatedId: item.id, createdAt: item.updatedAt })
+      }
+    })
+
+    borrowRecords.forEach((record) => {
+      if (record.status === 'overdue') {
+        const item = items.find((i) => i.id === record.itemId)
+        alerts.push({ id: `overdue-${record.id}`, type: 'overdue', title: '超期未归还', description: `${record.borrowerName}领用的${item?.name || '物品'}已超期`, relatedId: record.id, createdAt: record.expectedReturnDate })
+      }
+    })
+
+    items.forEach((item) => {
+      if (!item.responsibleId) {
+        alerts.push({ id: `resp-${item.id}`, type: 'responsible_missing', title: '责任人空缺', description: `${item.name}未指定责任人`, relatedId: item.id, createdAt: item.createdAt })
+      }
+    })
+
+    set({ alerts })
+  },
+}))
