@@ -1,15 +1,17 @@
 import { useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
-import type { AnomalyType, AnomalyStatus } from '@/types'
-import { ShieldCheck, ChevronDown, ChevronUp, Eye, Search, Filter } from 'lucide-react'
+import type { AnomalyType, AnomalyStatus, Anomaly } from '@/types'
+import { ShieldCheck, ChevronDown, ChevronUp, Eye, Search, CheckCircle, XCircle, PackagePlus } from 'lucide-react'
 
 export default function Audit() {
-  const { anomalies, borrowRecords, items, categories, responsibles, locations, currentRole } = useAppStore()
+  const { anomalies, borrowRecords, items, categories, responsibles, locations, currentRole, updateAnomaly, updateItem } = useAppStore()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filterType, setFilterType] = useState<AnomalyType | ''>('')
   const [filterStatus, setFilterStatus] = useState<AnomalyStatus | ''>('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [actionMsg, setActionMsg] = useState('')
 
+  const isAdmin = currentRole === 'admin'
   const isReadOnly = currentRole === 'auditor'
 
   const typeConfig: Record<AnomalyType, { label: string; color: string; badge: string }> = {
@@ -18,6 +20,7 @@ export default function Audit() {
     missing: { label: '丢失', color: 'text-red-400', badge: 'badge-danger' },
     quantity_mismatch: { label: '数量不符', color: 'text-amber-400', badge: 'badge-warning' },
     responsible_missing: { label: '责任人空缺', color: 'text-blue-400', badge: 'badge-info' },
+    replenish_request: { label: '补充申请', color: 'text-emerald-400', badge: 'badge-success' },
   }
 
   const statusConfig: Record<AnomalyStatus, { label: string; badge: string }> = {
@@ -46,6 +49,28 @@ export default function Audit() {
   const checkedCount = anomalies.filter((a) => a.status === 'checked').length
   const resolvedCount = anomalies.filter((a) => a.status === 'resolved').length
 
+  const handleMarkChecked = async (anomaly: Anomaly) => {
+    await updateAnomaly({ ...anomaly, status: 'checked', checkedAt: new Date().toISOString() })
+    setActionMsg('已标记为已核对')
+    setTimeout(() => setActionMsg(''), 2000)
+  }
+
+  const handleResolve = async (anomaly: Anomaly) => {
+    if (anomaly.type === 'replenish_request' && anomaly.itemId && anomaly.replenishQuantity) {
+      const item = items.find((i) => i.id === anomaly.itemId)
+      if (item) {
+        await updateItem({
+          ...item,
+          availableQuantity: item.availableQuantity + anomaly.replenishQuantity,
+          totalQuantity: item.totalQuantity + anomaly.replenishQuantity,
+        })
+      }
+    }
+    await updateAnomaly({ ...anomaly, status: 'resolved', checkedAt: new Date().toISOString() })
+    setActionMsg('已标记为已解决')
+    setTimeout(() => setActionMsg(''), 2000)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -72,6 +97,13 @@ export default function Audit() {
           </div>
         </div>
       </div>
+
+      {actionMsg && (
+        <div className="card px-4 py-3 flex items-center gap-2" style={{ borderColor: 'var(--accent)', background: 'rgba(16,185,129,0.1)' }}>
+          <CheckCircle size={16} style={{ color: 'var(--accent)' }} />
+          <span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>{actionMsg}</span>
+        </div>
+      )}
 
       <div className="card p-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
@@ -103,18 +135,21 @@ export default function Audit() {
           const isExpanded = expandedId === anomaly.id
 
           return (
-            <div key={anomaly.id} className="card overflow-hidden" style={{ borderColor: anomaly.status === 'pending' ? 'var(--warning)' : 'var(--border-color)' }}>
+            <div key={anomaly.id} className="card overflow-hidden" style={{ borderColor: anomaly.status === 'pending' ? 'var(--warning)' : anomaly.type === 'replenish_request' ? 'var(--accent)' : 'var(--border-color)' }}>
               <div
                 className="flex items-center gap-4 px-5 py-4 cursor-pointer"
                 onClick={() => setExpandedId(isExpanded ? null : anomaly.id)}
               >
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${typeCfg.badge === 'badge-danger' ? 'bg-red-500/10' : typeCfg.badge === 'badge-warning' ? 'bg-amber-500/10' : 'bg-blue-500/10'}`}>
-                  <ShieldCheck size={18} className={typeCfg.color} />
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${typeCfg.badge === 'badge-danger' ? 'bg-red-500/10' : typeCfg.badge === 'badge-warning' ? 'bg-amber-500/10' : typeCfg.badge === 'badge-success' ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
+                  {anomaly.type === 'replenish_request' ? <PackagePlus size={18} className={typeCfg.color} /> : <ShieldCheck size={18} className={typeCfg.color} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`badge ${typeCfg.badge}`}>{typeCfg.label}</span>
                     <span className={`badge ${statusCfg.badge}`}>{statusCfg.label}</span>
+                    {anomaly.type === 'replenish_request' && anomaly.replenishQuantity && (
+                      <span className="badge badge-success">+{anomaly.replenishQuantity}件</span>
+                    )}
                   </div>
                   <p className="text-sm truncate">{anomaly.description}</p>
                 </div>
@@ -147,10 +182,16 @@ export default function Audit() {
                           <span className="text-sm">{responsible?.name ?? '未指定'}</span>
                         </div>
                         <div>
-                          <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>库存</span>
+                          <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>当前库存</span>
                           <span className="text-sm">{item.availableQuantity} / {item.totalQuantity}</span>
                         </div>
                       </>
+                    )}
+                    {anomaly.type === 'replenish_request' && anomaly.replenishQuantity && (
+                      <div>
+                        <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>申请补充数量</span>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>+{anomaly.replenishQuantity} 件</span>
+                      </div>
                     )}
                     {record && (
                       <>
@@ -180,10 +221,29 @@ export default function Audit() {
                       <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>创建时间</span>
                       <span className="text-sm">{new Date(anomaly.createdAt).toLocaleString()}</span>
                     </div>
+                    {anomaly.checkedAt && (
+                      <div>
+                        <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>核对时间</span>
+                        <span className="text-sm">{new Date(anomaly.checkedAt).toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
                   {isReadOnly && (
                     <div className="mt-4 px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--info)' }}>
                       <Eye size={14} className="inline mr-1" /> 审计员角色仅可查看，不可修改
+                    </div>
+                  )}
+                  {isAdmin && anomaly.status !== 'resolved' && (
+                    <div className="mt-4 flex gap-3 justify-end">
+                      {anomaly.status === 'pending' && (
+                        <button className="btn-secondary flex items-center gap-1.5 text-xs" onClick={() => handleMarkChecked(anomaly)}>
+                          <CheckCircle size={14} /> 标记已核对
+                        </button>
+                      )}
+                      <button className="btn-primary flex items-center gap-1.5 text-xs" onClick={() => handleResolve(anomaly)}>
+                        {anomaly.type === 'replenish_request' ? <PackagePlus size={14} /> : <CheckCircle size={14} />}
+                        {anomaly.type === 'replenish_request' ? '批准并入库' : '标记已解决'}
+                      </button>
                     </div>
                   )}
                 </div>

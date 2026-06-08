@@ -63,8 +63,16 @@ const defaultFilters: FilterState = {
   searchQuery: '',
 }
 
+function getStoredRole(): Role {
+  try {
+    const stored = localStorage.getItem('office_current_role')
+    if (stored === 'admin' || stored === 'user' || stored === 'auditor') return stored
+  } catch {}
+  return 'admin'
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
-  currentRole: 'admin',
+  currentRole: getStoredRole(),
   categories: [],
   locations: [],
   responsibles: [],
@@ -77,6 +85,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dataLoaded: false,
 
   setRole: (role) => {
+    localStorage.setItem('office_current_role', role)
     set({ currentRole: role, selectedIds: new Set() })
   },
 
@@ -205,7 +214,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addBorrowRecord: async (data) => {
-    const record: BorrowRecord = { ...data, id: generateId(), status: 'borrowed' }
+    const isOverdue = new Date(data.expectedReturnDate) < new Date()
+    const status = isOverdue ? 'overdue' : 'borrowed'
+    const record: BorrowRecord = { ...data, id: generateId(), status }
     await db.put('borrowRecords', record)
     const item = get().items.find((i) => i.id === data.itemId)
     if (item) {
@@ -213,6 +224,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().updateItem({ ...item, availableQuantity: newQty })
     }
     set((s) => ({ borrowRecords: [...s.borrowRecords, record] }))
+    if (isOverdue) {
+      await get().addAnomaly({
+        borrowRecordId: record.id,
+        itemId: data.itemId,
+        type: 'overdue',
+        description: `领用时归还日期已过期，${data.borrowerName}领用${item?.name || '物品'}x${data.quantity}`,
+        status: 'pending',
+      })
+    }
+    get().refreshAlerts()
   },
   returnBorrowRecord: async (id, actualReturnDate) => {
     const record = get().borrowRecords.find((r) => r.id === id)
@@ -223,9 +244,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (item) {
       await get().updateItem({ ...item, availableQuantity: item.availableQuantity + record.quantity })
     }
+    const relatedAnomalies = get().anomalies.filter((a) => a.borrowRecordId === id && a.status !== 'resolved')
+    for (const anomaly of relatedAnomalies) {
+      const resolved: Anomaly = { ...anomaly, status: 'resolved', checkedAt: new Date().toISOString() }
+      await db.put('anomalies', resolved)
+    }
     set((s) => ({
       borrowRecords: s.borrowRecords.map((r) => (r.id === id ? updated : r)),
+      anomalies: s.anomalies.map((a) => {
+        if (a.borrowRecordId === id && a.status !== 'resolved') {
+          return { ...a, status: 'resolved' as const, checkedAt: new Date().toISOString() }
+        }
+        return a
+      }),
     }))
+    get().refreshAlerts()
   },
   batchReturnBorrowRecords: async (ids, actualReturnDate) => {
     const records = get().borrowRecords.filter((r) => ids.includes(r.id) && r.status !== 'returned')
@@ -235,14 +268,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       const item = get().items.find((i) => i.id === record.itemId)
       if (item) {
         const newQty = item.availableQuantity + record.quantity
-        const status = newQty <= 0 ? 'out_of_stock' : newQty < item.lowStockThreshold ? 'low_stock' : 'normal'
+        const status: ItemStatus = newQty <= 0 ? 'out_of_stock' : newQty < item.lowStockThreshold ? 'low_stock' : 'normal'
         const updatedItem = { ...item, availableQuantity: newQty, status, updatedAt: new Date().toISOString() }
         await db.put('items', updatedItem)
+      }
+      const relatedAnomalies = get().anomalies.filter((a) => a.borrowRecordId === record.id && a.status !== 'resolved')
+      for (const anomaly of relatedAnomalies) {
+        const resolved: Anomaly = { ...anomaly, status: 'resolved', checkedAt: new Date().toISOString() }
+        await db.put('anomalies', resolved)
       }
     }
     const allRecords = await db.getAll<BorrowRecord>('borrowRecords')
     const allItems = await db.getAll<Item>('items')
-    set({ borrowRecords: allRecords, items: allItems, selectedIds: new Set() })
+    const allAnomalies = await db.getAll<Anomaly>('anomalies')
+    set({ borrowRecords: allRecords, items: allItems, anomalies: allAnomalies, selectedIds: new Set() })
     get().refreshAlerts()
   },
 

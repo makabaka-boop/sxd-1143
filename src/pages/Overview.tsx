@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
 import type { FilterState } from '@/types'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -8,7 +8,7 @@ export default function Overview() {
   const {
     items, borrowRecords, categories, locations, responsibles, anomalies,
     filters, selectedIds, currentRole, alerts,
-    setFilters, resetFilters, toggleSelect, selectAll, clearSelection, removeHiddenSelections,
+    setFilters, resetFilters, toggleSelect, selectAll, clearSelection,
     batchUpdateItems, batchReturnBorrowRecords, addAnomaly,
   } = useAppStore()
 
@@ -55,27 +55,6 @@ export default function Overview() {
     return m[s] ?? ['badge-info', s]
   }
 
-  const computeVisibleIdsForFilter = useCallback((override: Partial<FilterState>) => {
-    const merged = { ...filters, ...override }
-    return new Set(
-      items
-        .filter((item) => {
-          if (merged.searchQuery && !item.name.toLowerCase().includes(merged.searchQuery.toLowerCase())) return false
-          if (merged.category && item.categoryId !== merged.category) return false
-          if (merged.location && item.locationId !== merged.location) return false
-          if (merged.responsible && item.responsibleId !== merged.responsible) return false
-          if (merged.borrowStatus) {
-            const hasActive = borrowRecords.some((r) => r.itemId === item.id && (r.status === 'borrowed' || r.status === 'overdue'))
-            if (merged.borrowStatus === 'borrowed' && !hasActive) return false
-            if (merged.borrowStatus === 'returned' && hasActive) return false
-          }
-          if (merged.anomalyType && !anomalies.some((a) => a.itemId === item.id && a.type === merged.anomalyType)) return false
-          return true
-        })
-        .map((i) => i.id)
-    )
-  }, [items, borrowRecords, anomalies, filters])
-
   const handleFilterChange = (update: Partial<FilterState>) => {
     if (selectedIds.size > 0) {
       setPendingFilter(update)
@@ -91,10 +70,9 @@ export default function Overview() {
 
   const handlePendingCancel = () => {
     if (pendingFilter) {
-      const newVisible = computeVisibleIdsForFilter(pendingFilter)
       setFilters(pendingFilter)
-      removeHiddenSelections(Array.from(newVisible))
     }
+    clearSelection()
     setPendingFilter(null)
   }
 
@@ -129,9 +107,17 @@ export default function Overview() {
     for (const id of visibleSelected) {
       const item = items.find((i) => i.id === id)
       if (item) {
-        batchUpdateItems([id], { availableQuantity: item.availableQuantity + replenishQty, totalQuantity: item.totalQuantity + replenishQty })
+        addAnomaly({
+          borrowRecordId: null,
+          itemId: id,
+          type: 'replenish_request' as const,
+          description: `申请补充"${item.name}"库存 ${replenishQty} 件，当前库存 ${item.availableQuantity}/${item.totalQuantity}`,
+          status: 'pending' as const,
+          replenishQuantity: replenishQty,
+        })
       }
     }
+    clearSelection()
     setShowReplenish(false)
     setReplenishQty(10)
   }
@@ -192,8 +178,9 @@ export default function Overview() {
           <option value="missing">丢失</option>
           <option value="quantity_mismatch">数量不符</option>
           <option value="responsible_missing">责任人空缺</option>
+          <option value="replenish_request">补充申请</option>
         </select>
-        <button className="btn-secondary flex items-center gap-1.5" onClick={resetFilters}>
+        <button className="btn-secondary flex items-center gap-1.5" onClick={() => { resetFilters(); clearSelection() }}>
           <RotateCcw size={14} /> 重置
         </button>
       </div>
@@ -287,12 +274,12 @@ export default function Overview() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReplenish(false)} />
           <div className="relative rounded-xl p-6 w-full max-w-sm shadow-2xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
             <h3 className="font-semibold text-base mb-4">补充申请</h3>
-            <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>为 {selectedIds.size} 件物品增加库存</p>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>为 {selectedIds.size} 件物品提交补充申请，管理员审核后入库</p>
             <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>补充数量</label>
             <input type="number" className="input-field" min={1} value={replenishQty} onChange={(e) => setReplenishQty(Math.max(1, Number(e.target.value)))} />
             <div className="flex justify-end gap-3 mt-5">
               <button className="btn-secondary" onClick={() => setShowReplenish(false)}>取消</button>
-              <button className="btn-primary" onClick={handleReplenish}>确认补充</button>
+              <button className="btn-primary" onClick={handleReplenish}>提交申请</button>
             </div>
           </div>
         </div>

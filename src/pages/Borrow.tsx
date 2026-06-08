@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/useAppStore'
-import { ArrowRightLeft, Package, Calendar, FileText, Check } from 'lucide-react'
+import { ArrowRightLeft, Package, Calendar, FileText, Check, AlertTriangle } from 'lucide-react'
 
 type BorrowTab = 'borrow' | 'return'
 
@@ -114,6 +114,11 @@ export default function Borrow() {
             <div>
               <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>预计归还日期 <span style={{ color: 'var(--danger)' }}>*</span></label>
               <input type="date" className="input-field" value={borrowForm.expectedReturnDate} onChange={(e) => setBorrowForm({ ...borrowForm, expectedReturnDate: e.target.value })} />
+              {borrowForm.expectedReturnDate && new Date(borrowForm.expectedReturnDate) < new Date() && (
+                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+                  <AlertTriangle size={12} /> 归还日期已过期，将自动标记为超期
+                </p>
+              )}
             </div>
             <div className="col-span-2">
               <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>用途 <span style={{ color: 'var(--danger)' }}>*</span></label>

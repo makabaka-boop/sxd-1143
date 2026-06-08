@@ -1,7 +1,7 @@
 import type { Category, Location, Responsible, Item, BorrowRecord, Anomaly } from '@/types'
 
 const DB_NAME = 'OfficeItemDB'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 const STORES = {
   categories: 'categories',
@@ -19,6 +19,13 @@ function openDB(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result)
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
+      const oldVersion = (event.target as IDBOpenDBRequest).transaction?.db?.version ?? 0
+
+      if (oldVersion > 0 && oldVersion < DB_VERSION) {
+        for (const name of Array.from(db.objectStoreNames)) {
+          db.deleteObjectStore(name)
+        }
+      }
 
       if (!db.objectStoreNames.contains(STORES.categories)) {
         const store = db.createObjectStore(STORES.categories, { keyPath: 'id' })

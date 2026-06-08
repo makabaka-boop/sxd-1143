@@ -52,7 +52,7 @@ export interface BorrowRecord {
   status: BorrowStatus
 }
 
-export type AnomalyType = 'overdue' | 'damaged' | 'missing' | 'quantity_mismatch' | 'responsible_missing'
+export type AnomalyType = 'overdue' | 'damaged' | 'missing' | 'quantity_mismatch' | 'responsible_missing' | 'replenish_request'
 export type AnomalyStatus = 'pending' | 'checked' | 'resolved'
 
 export interface Anomaly {
@@ -64,6 +64,7 @@ export interface Anomaly {
   status: AnomalyStatus
   createdAt: string
   checkedAt: string | null
+  replenishQuantity?: number
 }
 
 export interface FilterState {
