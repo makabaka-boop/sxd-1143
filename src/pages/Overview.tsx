@@ -31,7 +31,10 @@ export default function Overview() {
       const checks = inventoryChecks.filter((c) => c.items.some((ci) => ci.itemId === item.id))
       const latest = checks.length > 0 ? checks.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] : null
       if (!latest) return false
-      if (latest.status !== filters.checkStatus) return false
+      if (filters.checkStatus === 'has_diff') {
+        const hasDiff = latest.items.some((ci) => ci.itemId === item.id && ci.difference !== null && ci.difference !== 0)
+        if (!hasDiff) return false
+      } else if (latest.status !== filters.checkStatus) return false
     }
     return true
   }), [items, borrowRecords, anomalies, inventoryChecks, filters])
@@ -219,6 +222,7 @@ export default function Overview() {
           <option value="pending">待盘点</option>
           <option value="in_progress">盘点中</option>
           <option value="completed">已盘点</option>
+          <option value="has_diff">有差异</option>
         </select>
         <button className="btn-secondary flex items-center gap-1.5" onClick={() => { resetFilters(); clearSelection() }}>
           <RotateCcw size={14} /> 重置

@@ -9,7 +9,7 @@ type Tab = 'categories' | 'locations' | 'responsibles'
 
 export default function Manage() {
   const {
-    categories, locations, responsibles, inventoryChecks,
+    items, categories, locations, responsibles, inventoryChecks,
     deleteCategory,
     deleteLocation,
     deleteResponsible,
@@ -22,7 +22,20 @@ export default function Manage() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: Tab; id: string; name: string } | null>(null)
 
   const getCheckCount = (scope: 'category' | 'location' | 'responsible', id: string) => {
-    return inventoryChecks.filter((c) => c.scope === scope && c.scopeIds.includes(id)).length
+    return inventoryChecks.filter((c) => {
+      if (c.scope === scope && c.scopeIds.includes(id)) return true
+      if (c.scope === 'specific_items') {
+        return c.items.some((ci) => {
+          const item = items.find((i) => i.id === ci.itemId)
+          if (!item) return false
+          if (scope === 'category') return item.categoryId === id
+          if (scope === 'location') return item.locationId === id
+          if (scope === 'responsible') return item.responsibleId === id
+          return false
+        })
+      }
+      return false
+    }).length
   }
 
   const tabs: { key: Tab; label: string; icon: typeof Tag; count: number }[] = [

@@ -318,7 +318,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   completeInventoryCheck: async (id) => {
     const check = get().inventoryChecks.find((c) => c.id === id)
-    if (!check) return
+    if (!check || check.status === 'completed') return
     const now = new Date().toISOString()
     const updatedItems = check.items.map((item) => {
       if (item.actualQuantity !== null) {

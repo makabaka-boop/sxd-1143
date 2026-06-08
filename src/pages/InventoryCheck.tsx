@@ -287,7 +287,7 @@ function CreateCheckView({ onBack }: { onBack: () => void }) {
   }
 
   const handleSubmit = async () => {
-    if (!title || !checkerName || scopeIds.length === 0) return
+    if (!title || !checkerName || scopeIds.length === 0 || filteredItems.length === 0) return
     const checkItems: InventoryCheckItem[] = filteredItems.map((item) => ({
       itemId: item.id,
       bookQuantity: item.availableQuantity,
@@ -371,9 +371,15 @@ function CreateCheckView({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
+        {scopeIds.length > 0 && filteredItems.length === 0 && (
+          <div className="rounded-lg p-4" style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid var(--danger)' }}>
+            <p className="text-sm font-medium" style={{ color: 'var(--danger)' }}>所选范围内没有物品，无法创建盘点任务</p>
+          </div>
+        )}
+
         <div className="flex justify-end gap-3">
           <button className="btn-secondary" onClick={onBack}>取消</button>
-          <button className="btn-primary" onClick={handleSubmit} disabled={!title || !checkerName || scopeIds.length === 0}>
+          <button className="btn-primary" onClick={handleSubmit} disabled={!title || !checkerName || scopeIds.length === 0 || filteredItems.length === 0}>
             创建盘点任务
           </button>
         </div>
@@ -421,6 +427,7 @@ function CheckDetailView({
   }
 
   const handleComplete = async () => {
+    if (editItems.length === 0) return
     const allChecked = editItems.every((i) => i.actualQuantity !== null)
     if (!allChecked) return
 
@@ -448,6 +455,23 @@ function CheckDetailView({
     }
 
     onBack()
+  }
+
+  const handleAdjustStock = async () => {
+    if (adjustItems.size === 0) return
+    for (const ci of editItems) {
+      if (adjustItems.has(ci.itemId) && ci.difference !== null && ci.difference !== 0) {
+        const item = getItem(ci.itemId)
+        if (item) {
+          await updateItem({
+            ...item,
+            availableQuantity: item.availableQuantity + ci.difference,
+            totalQuantity: item.totalQuantity + ci.difference,
+          })
+        }
+      }
+    }
+    setAdjustItems(new Set())
   }
 
   const isCompleted = check.status === 'completed'
@@ -533,8 +557,8 @@ function CheckDetailView({
           </div>
           {isAdmin && adjustItems.size > 0 && (
             <div className="mt-3 flex justify-end">
-              <button className="btn-danger flex items-center gap-1.5 text-xs" onClick={handleComplete}>
-                <CheckCircle size={14} /> 确认调整库存并完成
+              <button className="btn-danger flex items-center gap-1.5 text-xs" onClick={handleAdjustStock}>
+                <CheckCircle size={14} /> 确认调整库存
               </button>
             </div>
           )}
@@ -614,7 +638,7 @@ function CheckDetailView({
           <button
             className="btn-primary flex items-center gap-1.5"
             onClick={() => setShowComplete(true)}
-            disabled={!allChecked}
+            disabled={editItems.length === 0 || !allChecked}
           >
             <CheckCircle size={14} /> 完成盘点
           </button>

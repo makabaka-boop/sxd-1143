@@ -98,7 +98,7 @@ export interface FilterState {
   borrowStatus: BorrowStatus | null
   anomalyType: AnomalyType | null
   searchQuery: string
-  checkStatus: CheckStatus | null
+  checkStatus: CheckStatus | 'has_diff' | null
 }
 
 export type BatchAction = 'return' | 'replenish' | 'check'
